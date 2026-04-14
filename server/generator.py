@@ -29,7 +29,7 @@ def stream_tokens(prompt, tokenizer, model, max_tokens=50, temperature=1.0, top_
             next_token_id = torch.multinomial(probs, num_samples=1)
 
         input_ids = torch.cat(
-            [input_ids, next_token_id.unsqueeze(0)], dim=1
+            [input_ids, next_token_id], dim=1
         )
 
         token_text = tokenizer.decode(next_token_id[0])

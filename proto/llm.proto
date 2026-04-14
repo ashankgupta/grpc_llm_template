@@ -2,15 +2,25 @@ syntax = "proto3";
 
 package llm;
 
-service LLMService {
-  rpc Generate (Prompt) returns (stream Token);
-}
-
 message Prompt {
   string text = 1;
   float temperature = 2;
   float top_p = 3;
   int32 top_k = 4;
+}
+
+message BatchRequest {
+  repeated Prompt prompts = 1;
+}
+
+message BatchResponse {
+  string id = 1;
+  string token = 2;
+}
+
+service LLMService {
+  rpc Generate (Prompt) returns (stream Token);
+  rpc BatchGenerate (BatchRequest) returns (stream BatchResponse);
 }
 
 message Token {
