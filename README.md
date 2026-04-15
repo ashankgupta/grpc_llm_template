@@ -1,4 +1,4 @@
-# gRPC LLM eemplate
+# gRPC LLM Template
 
 A production-ready template for serving Large Language Models via gRPC with streaming token generation. Built with Python, PyTorch, Hugging Face Transformers, and gRPC.
 
@@ -6,6 +6,7 @@ A production-ready template for serving Large Language Models via gRPC with stre
 
 - gRPC-based API for LLM inference
 - Streaming token generation for real-time responses
+- **Batch processing** - process multiple prompts in parallel
 - Configurable model selection via CLI or config file
 - Threaded gRPC server for concurrent requests
 - Support for any HuggingFace causal language model
@@ -55,6 +56,9 @@ server:
 model:
   name: "gpt2"
   max_tokens: 50
+  temperature: 1.0
+  top_p: 1.0
+  top_k: 50
 ```
 
 | Parameter | Description |
@@ -63,25 +67,34 @@ model:
 | `server.port` | gRPC server port |
 | `model.name` | HuggingFace model identifier |
 | `model.max_tokens` | Maximum tokens to generate |
+| `model.temperature` | Sampling temperature (default 1.0) |
+| `model.top_p` | Nucleus sampling threshold (default 1.0) |
+| `model.top_k` | Top-k sampling (default 50) |
 
 ## Usage
 
 ### Starting the Server
 
 ```bash
-python server/server.py
+python -m server.server
 ```
 
 Override configuration via command-line arguments:
 
 ```bash
-python server/server.py --model gpt2 --port 50051
+python -m server.server --model gpt2 --port 50051
 ```
 
 ### Running the Client
 
+Single prompt:
 ```bash
-python client/client.py "Your prompt here"
+python -m client.client "Your prompt here"
+```
+
+Multiple prompts (batch processing):
+```bash
+python -m client.client "Prompt 1" "Prompt 2" "Prompt 3"
 ```
 
 ### Using with Another gRPC Client
@@ -91,14 +104,27 @@ The service exposes the following interface:
 ```protobuf
 service LLMService {
   rpc Generate (Prompt) returns (stream Token);
+  rpc BatchGenerate (BatchRequest) returns (stream BatchResponse);
 }
 
 message Prompt {
   string text = 1;
+  float temperature = 2;
+  float top_p = 3;
+  int32 top_k = 4;
 }
 
 message Token {
   string text = 1;
+}
+
+message BatchRequest {
+  repeated Prompt prompts = 1;
+}
+
+message BatchResponse {
+  string id = 1;
+  string token = 2;
 }
 ```
 
@@ -111,11 +137,22 @@ from generated import llm_pb2, llm_pb2_grpc
 channel = grpc.insecure_channel("localhost:50051")
 stub = llm_pb2_grpc.LLMServiceStub(channel)
 
+# Single prompt
 response = stub.Generate(llm_pb2.Prompt(text="Tell me a joke"))
 
 for token in response:
     print(token.text, end="", flush=True)
 print()
+
+# Multiple prompts (batch processing)
+batch_request = llm_pb2.BatchRequest(
+    prompts=[
+        llm_pb2.Prompt(text="Hello"),
+        llm_pb2.Prompt(text="World"),
+    ]
+)
+for resp in stub.BatchGenerate(batch_request):
+    print(f"ID:{resp.id} -> {resp.token}")
 ```
 
 ## Project Structure
@@ -124,7 +161,7 @@ print()
 grpc-llm-template/
 ├── client/
 │   ├── __init__.py
-│   └── client.py           # gRPC client implementation
+│   └── client.py           # gRPC client implementation (single & batch)
 ├── generated/
 │   ├── __init__.py
 │   ├── llm_pb2.py          # Generated protobuf code
@@ -134,7 +171,7 @@ grpc-llm-template/
 ├── server/
 │   ├── __init__.py
 │   ├── config.py           # Configuration loader
-│   ├── generator.py       # Token streaming logic
+│   ├── generator.py        # Token streaming logic
 │   ├── model_loader.py     # Model loading utility
 │   └── server.py           # gRPC server
 ├── config.yaml             # Configuration file
