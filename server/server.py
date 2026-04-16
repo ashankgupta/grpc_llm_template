@@ -75,18 +75,15 @@ class LLMService(llm_pb2_grpc.LLMServiceServicer):
     def BatchGenerate(self, request, context):
         """Handle batch generation of prompts.
 
-        Each incoming Prompt is assigned a unique ID and processed in parallel.
+        Each incoming Prompt is assigned a unique ID and processed sequentially.
         The server streams back BatchResponse messages containing the ID and token.
         """
-        # Assign a unique ID to each prompt in the request
-        prompt_ids = [str(uuid.uuid4()) for _ in request.prompts]
-
-        # Helper function to process a single prompt and collect responses
-        def process_single(prompt_msg, prompt_id):
+        for prompt_msg in request.prompts:
+            prompt_id = str(uuid.uuid4())
             temperature = prompt_msg.temperature if prompt_msg.temperature > 0 else DEFAULT_TEMPERATURE
             top_p = prompt_msg.top_p if prompt_msg.top_p > 0 else DEFAULT_TOP_P
             top_k = prompt_msg.top_k if prompt_msg.top_k > 0 else DEFAULT_TOP_K
-            responses = []
+
             for token in stream_tokens(
                 prompt_msg.text,
                 self.tokenizer,
@@ -96,23 +93,7 @@ class LLMService(llm_pb2_grpc.LLMServiceServicer):
                 top_p=top_p,
                 top_k=top_k,
             ):
-                responses.append(llm_pb2.BatchResponse(id=prompt_id, token=token))
-            return responses
-
-        # Use a ThreadPoolExecutor to process prompts in parallel
-        with futures.ThreadPoolExecutor(max_workers=len(request.prompts) or 1) as executor:
-            future_to_id = {
-                executor.submit(process_single, prompt_msg, pid): pid
-                for prompt_msg, pid in zip(request.prompts, prompt_ids)
-            }
-            for future in futures.as_completed(future_to_id):
-                try:
-                    batch_responses = future.result()
-                    for resp in batch_responses:
-                        yield resp
-                except Exception as e:
-                    # If processing a prompt fails, log and continue
-                    print(f"Error processing batch prompt {future_to_id[future]}: {e}")
+                yield llm_pb2.BatchResponse(id=prompt_id, token=token)
 
 
 def serve():

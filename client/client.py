@@ -1,13 +1,12 @@
 import grpc
 import sys
 import argparse
-from google.protobuf.timestamp_pb2 import Timestamp
 
 from generated import llm_pb2
 from generated import llm_pb2_grpc
 
 def batch_generate(prompts, temperature=1.0, top_p=1.0, top_k=50):
-    """Send multiple prompts and collect filtered tokens by ID"""
+    """Send multiple prompts and stream tokens without IDs"""
     request = llm_pb2.BatchRequest(
         prompts=[llm_pb2.Prompt(
             text=prompt_text,
@@ -16,14 +15,14 @@ def batch_generate(prompts, temperature=1.0, top_p=1.0, top_k=50):
             top_k=top_k
         ) for prompt_text in prompts]
     )
-    response_stream = stub.BatchGenerate(request)
-    results = []
-    for batch_resp in response_stream:
-        results.append({
-            'id': batch_resp.id,
-            'token': batch_resp.token
-        })
-    return results
+    channel = grpc.insecure_channel("localhost:50051")
+    stub = llm_pb2_grpc.LLMServiceStub(channel)
+    prev_id = None
+    for batch_resp in stub.BatchGenerate(request):
+        if prev_id is not None and batch_resp.id != prev_id:
+            print()
+        print(batch_resp.token, end="", flush=True)
+        prev_id = batch_resp.id
 
 def main():
     parser = argparse.ArgumentParser()
@@ -49,15 +48,12 @@ def main():
         for token in response:
             print(token.text, end="", flush=True)
     else:
-        batch_responses = batch_generate(
+        batch_generate(
             args.prompt,
             args.temperature,
             args.top_p,
             args.top_k
         )
-        print("\nBatch Responses (ID:token pairs):")
-        for resp in batch_responses:
-            print(f"ID:{resp['id']} -> {resp['token']}")
 
 if __name__ == "__main__":
     main()
